@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Visualizer & Formatter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Scrollbar for a cleaner look */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b; 
+        }
+
+        /* Syntax Highlighting Colors */
+        .json-key { color: #9cdcfe; }      /* Light Blue */
+        .json-string { color: #ce9178; }   /* Orange/Red */
+        .json-number { color: #b5cea8; }   /* Light Green */
+        .json-boolean { color: #569cd6; }  /* Blue */
+        .json-null { color: #569cd6; }     /* Blue */
+        .json-bracket { color: #d4d4d4; }  /* Light Grey */
+        
+        /* Tree View specific styles */
+        .collapsible-arrow {
+            display: inline-block;
+            cursor: pointer;
+            width: 16px;
+            text-align: center;
+            transition: transform 0.2s ease;
+            user-select: none;
+            color: #d4d4d4;
+            vertical-align: middle;
+        }
+        .collapsed .collapsible-arrow {
+            transform: rotate(-90deg);
+        }
+        .child-container {
+            margin-left: 20px;
+            border-left: 1px solid #334155;
+            padding-left: 4px;
+        }
+        .collapsed .child-container {
+            display: none;
+        }
+        .collapsed-indicator {
+            display: none;
+            color: #64748b;
+            font-style: italic;
+            font-size: 0.9em;
+            cursor: pointer;
+        }
+        .collapsed .collapsed-indicator {
+            display: inline;
+        }
+        
+        /* Animation for error message */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+            20%, 40%, 60%, 80% { transform: translateX(4px); }
+        }
+        .shake-animation {
+            animation: shake 0.4s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-200 h-screen flex flex-col font-mono text-sm overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-slate-800 border-b border-slate-700 p-4 flex justify-between items-center shadow-md z-10 shrink-0">
+        <div class="flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+            </svg>
+            <h1 class="text-xl font-bold text-white tracking-wide">JSON <span class="text-blue-400">Visualizer</span></h1>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="clearAll()" class="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded transition flex items-center gap-2">
+                <span>Clear</span>
+            </button>
+            <div class="h-6 w-px bg-slate-600 mx-1"></div>
+            <!-- Wrap Toggle -->
+            <button id="wrap-toggle" onclick="toggleWrap()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition flex items-center gap-2 w-28 justify-center">
+                <span>Wrap: On</span>
+            </button>
+            <button onclick="minifyInput()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition hidden md:block">
+                Minify
+            </button>
+            <button onclick="formatInput()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition">
+                Prettify Text
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+        
+        <!-- Left Pane: Input -->
+        <!-- Added min-w-0 to prevent flex item from overflowing parent -->
+        <div class="flex-1 min-w-0 flex flex-col border-b md:border-b-0 md:border-r border-slate-700 min-h-[300px] md:min-h-0 relative group">
+            <div class="bg-slate-800/50 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider flex justify-between items-center shrink-0">
+                <span>Raw Input</span>
+                <span id="input-status" class="text-slate-500 font-normal">0 chars</span>
+            </div>
+            <!-- Defaulting to whitespace-pre-wrap (Wrap On) -->
+            <textarea 
+                id="json-input" 
+                class="flex-1 bg-slate-900 p-4 resize-none focus:outline-none focus:ring-0 font-mono text-slate-300 leading-relaxed w-full h-full whitespace-pre-wrap"
+                placeholder='Paste your raw JSON here...&#10;Example: {"name": "John", "age": 30}'
+                spellcheck="false"
+            ></textarea>
+            
+            <!-- Error Toast -->
+            <div id="error-toast" class="absolute bottom-4 left-4 right-4 bg-red-900/90 border border-red-500 text-red-100 px-4 py-3 rounded shadow-lg transform translate-y-20 transition-transform duration-300 flex justify-between items-center z-20">
+                <span id="error-message">Invalid JSON</span>
+                <button onclick="hideError()" class="text-red-300 hover:text-white">✕</button>
+            </div>
+        </div>
+
+        <!-- Middle Action Bar (Mobile Only) -->
+        <div class="md:hidden bg-slate-800 p-2 flex justify-center border-b border-slate-700 shrink-0">
+            <button onclick="processJSON()" class="bg-blue-600 text-white px-6 py-2 rounded shadow-lg font-bold w-full">
+                Visualize ↓
+            </button>
+        </div>
+
+        <!-- Right Pane: Output -->
+        <!-- Added min-w-0 to prevent flex item from overflowing parent -->
+        <div class="flex-1 min-w-0 flex flex-col bg-[#1e1e1e] relative">
+            <div class="bg-slate-800/50 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider flex justify-between items-center border-b border-slate-700 shrink-0">
+                <span>Tree View</span>
+                <div class="flex gap-2">
+                    <button onclick="expandAll()" class="hover:text-white transition" title="Expand All">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+                    </button>
+                    <button onclick="collapseAll()" class="hover:text-white transition" title="Collapse All">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+                    </button>
+                    <button onclick="copyOutput()" class="hover:text-blue-400 transition ml-2" title="Copy Content">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    </button>
+                </div>
+            </div>
+            
+            <div id="json-output" class="flex-1 p-4 overflow-auto font-mono text-sm leading-6 whitespace-normal break-all">
+                <!-- Initial State -->
+                <div class="h-full flex flex-col items-center justify-center text-slate-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+                    </svg>
+                    <p>JSON structure will appear here</p>
+                </div>
+            </div>
+
+            <!-- Copied Toast -->
+            <div id="copy-toast" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-blue-600 text-white px-4 py-2 rounded shadow-xl opacity-0 transition-opacity pointer-events-none">
+                Copied to Clipboard!
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- DOM Elements ---
+        const inputArea = document.getElementById('json-input');
+        const outputArea = document.getElementById('json-output');
+        const errorToast = document.getElementById('error-toast');
+        const errorMessage = document.getElementById('error-message');
+        const inputStatus = document.getElementById('input-status');
+        const wrapToggleBtn = document.getElementById('wrap-toggle');
+
+        let debounceTimer;
+        let isWrapEnabled = true;
+
+        // --- Event Listeners ---
+        inputArea.addEventListener('input', () => {
+            updateStatus();
+            hideError();
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                processJSON();
+            }, 800); 
+        });
+
+        // --- Core Functions ---
+        
+        function toggleWrap() {
+            isWrapEnabled = !isWrapEnabled;
+            
+            // Update UI Button
+            wrapToggleBtn.querySelector('span').textContent = isWrapEnabled ? "Wrap: On" : "Wrap: Off";
+            
+            // Toggle Classes for Input Area
+            if (isWrapEnabled) {
+                inputArea.classList.remove('whitespace-pre', 'overflow-x-auto');
+                inputArea.classList.add('whitespace-pre-wrap');
+            } else {
+                inputArea.classList.remove('whitespace-pre-wrap');
+                inputArea.classList.add('whitespace-pre', 'overflow-x-auto');
+            }
+
+            // Toggle Classes for Output Area
+            if (isWrapEnabled) {
+                outputArea.classList.remove('whitespace-nowrap');
+                outputArea.classList.add('whitespace-normal', 'break-all'); 
+                // break-all is aggressive but ensures no horizontal scroll in Wrap On mode.
+                // break-words might be better for reading, but JSON has long tokens.
+            } else {
+                outputArea.classList.remove('whitespace-normal', 'break-all');
+                outputArea.classList.add('whitespace-nowrap');
+            }
+        }
+
+        function processJSON() {
+            const raw = inputArea.value.trim();
+            
+            if (!raw) {
+                outputArea.innerHTML = `
+                <div class="h-full flex flex-col items-center justify-center text-slate-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+                    </svg>
+                    <p>JSON structure will appear here</p>
+                </div>`;
+                return;
+            }
+
+            try {
+                let data;
+                try {
+                    data = JSON.parse(raw);
+                } catch (e) {
+                    throw e; 
+                }
+
+                outputArea.innerHTML = '';
+                const tree = createTree(data);
+                outputArea.appendChild(tree);
+                hideError();
+
+            } catch (e) {
+                showError(e.message);
+            }
+        }
+
+        function createTree(data) {
+            const container = document.createElement('div');
+            container.className = 'json-tree';
+            container.appendChild(buildNode(null, data, true));
+            return container;
+        }
+
+        function buildNode(key, value, isLastItem) {
+            const type = getType(value);
+            const line = document.createElement('div');
+            line.className = 'line';
+
+            if (key !== null) {
+                const keySpan = document.createElement('span');
+                keySpan.className = 'json-key';
+                keySpan.textContent = `"${key}"`;
+                line.appendChild(keySpan);
+                
+                const colon = document.createElement('span');
+                colon.className = 'json-bracket';
+                colon.textContent = ': ';
+                line.appendChild(colon);
+            }
+
+            if (type === 'object' || type === 'array') {
+                const isArray = type === 'array';
+                const isEmpty = isArray ? value.length === 0 : Object.keys(value).length === 0;
+                const openChar = isArray ? '[' : '{';
+                const closeChar = isArray ? ']' : '}';
+                const sizeInfo = isArray ? `Array(${value.length})` : `Object {${Object.keys(value).length}}`;
+
+                const arrow = document.createElement('span');
+                arrow.className = 'collapsible-arrow';
+                arrow.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+                
+                if (isEmpty) {
+                    arrow.style.visibility = 'hidden';
+                }
+
+                line.insertBefore(arrow, line.firstChild); 
+
+                const openSpan = document.createElement('span');
+                openSpan.className = 'json-bracket';
+                openSpan.textContent = openChar;
+                line.appendChild(openSpan);
+
+                const collapsedIndicator = document.createElement('span');
+                collapsedIndicator.className = 'collapsed-indicator';
+                collapsedIndicator.textContent = ` ... ${sizeInfo} ${closeChar}`;
+                if (!isLastItem) collapsedIndicator.textContent += ',';
+                
+                collapsedIndicator.onclick = (e) => {
+                    e.stopPropagation();
+                    toggleNode(line);
+                };
+                line.appendChild(collapsedIndicator);
+
+                if (!isEmpty) {
+                    const childrenDiv = document.createElement('div');
+                    childrenDiv.className = 'child-container';
+                    
+                    const keys = Object.keys(value);
+                    keys.forEach((k, index) => {
+                        const isLast = index === keys.length - 1;
+                        childrenDiv.appendChild(buildNode(isArray ? null : k, value[k], isLast));
+                    });
+
+                    line.appendChild(childrenDiv);
+
+                    const closeDiv = document.createElement('div');
+                    const closeSpan = document.createElement('span');
+                    closeSpan.className = 'json-bracket';
+                    closeSpan.textContent = closeChar;
+                    closeDiv.appendChild(closeSpan);
+                    if (!isLastItem) {
+                        closeDiv.innerHTML += '<span class="json-bracket">,</span>';
+                    }
+                    childrenDiv.appendChild(closeDiv);
+
+                    arrow.onclick = (e) => {
+                        e.stopPropagation();
+                        toggleNode(line);
+                    };
+                } else {
+                    const closeSpan = document.createElement('span');
+                    closeSpan.className = 'json-bracket';
+                    closeSpan.textContent = closeChar;
+                    line.appendChild(closeSpan);
+                    if (!isLastItem) {
+                        const comma = document.createElement('span');
+                        comma.className = 'json-bracket';
+                        comma.textContent = ',';
+                        line.appendChild(comma);
+                    }
+                }
+
+            } else {
+                const valSpan = document.createElement('span');
+                valSpan.className = `json-${type}`;
+                
+                if (type === 'string') {
+                    valSpan.textContent = `"${value}"`;
+                } else {
+                    valSpan.textContent = value;
+                }
+                
+                line.appendChild(valSpan);
+
+                if (!isLastItem) {
+                    const comma = document.createElement('span');
+                    comma.className = 'json-bracket';
+                    comma.textContent = ',';
+                    line.appendChild(comma);
+                }
+                
+                const spacer = document.createElement('span');
+                spacer.className = 'collapsible-arrow'; 
+                spacer.style.visibility = 'hidden';
+                line.insertBefore(spacer, line.firstChild);
+            }
+
+            return line;
+        }
+
+        function toggleNode(element) {
+            element.classList.toggle('collapsed');
+        }
+
+        function getType(value) {
+            if (value === null) return 'null';
+            if (Array.isArray(value)) return 'array';
+            return typeof value;
+        }
+
+        function formatInput() {
+            const raw = inputArea.value;
+            if (!raw) return;
+            try {
+                const obj = JSON.parse(raw);
+                inputArea.value = JSON.stringify(obj, null, 4);
+                processJSON(); 
+                updateStatus();
+            } catch (e) {
+                showError("Cannot format: Invalid JSON");
+            }
+        }
+
+        function minifyInput() {
+            const raw = inputArea.value;
+            if (!raw) return;
+            try {
+                const obj = JSON.parse(raw);
+                inputArea.value = JSON.stringify(obj);
+                processJSON();
+                updateStatus();
+            } catch (e) {
+                showError("Cannot minify: Invalid JSON");
+            }
+        }
+
+        function clearAll() {
+            inputArea.value = '';
+            outputArea.innerHTML = `
+                <div class="h-full flex flex-col items-center justify-center text-slate-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+                    </svg>
+                    <p>JSON structure will appear here</p>
+                </div>`;
+            updateStatus();
+            hideError();
+        }
+
+        function expandAll() {
+            const allCollapsed = outputArea.querySelectorAll('.collapsed');
+            allCollapsed.forEach(el => el.classList.remove('collapsed'));
+        }
+
+        function collapseAll() {
+            const arrows = outputArea.querySelectorAll('.collapsible-arrow');
+            arrows.forEach(arrow => {
+                const parent = arrow.parentElement;
+                if (parent.querySelector('.child-container')) {
+                    parent.classList.add('collapsed');
+                }
+            });
+        }
+        
+        function copyOutput() {
+             const raw = inputArea.value;
+             if(!raw) return;
+             
+             try {
+                 const obj = JSON.parse(raw);
+                 const pretty = JSON.stringify(obj, null, 2);
+                 
+                 const textArea = document.createElement("textarea");
+                 textArea.value = pretty;
+                 document.body.appendChild(textArea);
+                 textArea.select();
+                 document.execCommand('copy');
+                 document.body.removeChild(textArea);
+                 
+                 showCopyToast();
+             } catch(e) {
+                 showError("Cannot copy: Invalid JSON");
+             }
+        }
+
+        function showCopyToast() {
+            const toast = document.getElementById('copy-toast');
+            toast.style.opacity = '1';
+            setTimeout(() => {
+                toast.style.opacity = '0';
+            }, 2000);
+        }
+
+        function showError(msg) {
+            errorMessage.textContent = msg;
+            errorToast.classList.remove('translate-y-20'); 
+            errorToast.classList.add('shake-animation');
+            setTimeout(() => errorToast.classList.remove('shake-animation'), 400);
+        }
+
+        function hideError() {
+            errorToast.classList.add('translate-y-20'); 
+        }
+
+        function updateStatus() {
+            const chars = inputArea.value.length;
+            inputStatus.textContent = `${chars.toLocaleString()} chars`;
+        }
+
+    </script>
+</body>
+</html>
