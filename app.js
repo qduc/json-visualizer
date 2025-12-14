@@ -7,10 +7,12 @@ const inputStatus = document.getElementById('input-status');
 const wrapToggleBtn = document.getElementById('wrap-toggle');
 const escapeJsonBtn = document.getElementById('escape-json-btn');
 const unescapeJsonBtn = document.getElementById('unescape-json-btn');
+const maximizeBtn = document.getElementById('maximize-btn');
 const lineNumbers = document.getElementById('line-numbers');
 
 let debounceTimer;
 let isWrapEnabled = true;
+let isMaximized = false;
 let resizeDebounceTimer;
 let lineNumberUpdateScheduled = false;
 let mirrorElement = null;
@@ -172,6 +174,22 @@ function toggleWrap() {
 
     // Re-process JSON to update display
     processJSON();
+}
+
+function toggleMaximize() {
+    isMaximized = !isMaximized;
+    const leftPane = document.querySelector('.left-pane');
+    const middleBar = document.querySelector('.middle-bar');
+
+    if (isMaximized) {
+        leftPane.classList.add('hidden');
+        middleBar.classList.add('hidden');
+        maximizeBtn.textContent = 'Restore';
+    } else {
+        leftPane.classList.remove('hidden');
+        middleBar.classList.remove('hidden');
+        maximizeBtn.textContent = 'Maximize Tree';
+    }
 }
 
 function processJSON() {
