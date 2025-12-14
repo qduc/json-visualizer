@@ -17,11 +17,11 @@
             </svg>
             <h1 class="text-xl font-bold text-white tracking-wide">JSON <span class="text-blue-400">Visualizer</span></h1>
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 flex-wrap sm:flex-nowrap">
             <button onclick="clearAll()" class="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded transition flex items-center gap-2">
                 <span>Clear</span>
             </button>
-            <div class="h-6 w-px bg-slate-600 mx-1"></div>
+            <div class="h-6 w-px bg-slate-600 mx-1 hidden sm:block"></div>
             <!-- Wrap Toggle -->
             <button id="wrap-toggle" onclick="toggleWrap()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition flex items-center gap-2 w-28 justify-center">
                 <span>Wrap: On</span>
@@ -32,7 +32,7 @@
             <button onclick="formatInput()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition">
                 Prettify Text
             </button>
-            <button id="maximize-btn" onclick="toggleMaximize()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition">
+            <button id="maximize-btn" onclick="toggleMaximize()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition hidden sm:block">
                 Maximize Tree
             </button>
             <button id="escape-json-btn" onclick="escapeJsonInput()"
@@ -51,7 +51,7 @@
 
         <!-- Left Pane: Input -->
         <!-- Added min-w-0 to prevent flex item from overflowing parent -->
-        <div class="left-pane flex-1 min-w-0 flex flex-col border-b md:border-b-0 md:border-r border-slate-700 min-h-[300px] md:min-h-0 relative group">
+        <div class="left-pane flex-1 min-w-0 flex flex-col border-b md:border-b-0 md:border-r border-slate-700 min-h-[40vh] md:min-h-0 relative group">
             <div class="bg-slate-800/50 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider flex justify-between items-center shrink-0">
                 <span>Raw Input</span>
                 <span id="input-status" class="text-slate-500 font-normal">0 chars</span>

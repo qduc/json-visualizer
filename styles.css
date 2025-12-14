@@ -88,3 +88,58 @@
 .shake-animation {
     animation: shake 0.4s ease-in-out;
 }
+
+/* Mobile-first improvements for narrow screens */
+@media (max-width: 640px) {
+    /* Larger touch targets for buttons */
+    header button {
+        padding: 0.625rem 1rem; /* 10px 16px */
+        min-height: 44px; /* Minimum touch target */
+    }
+
+    /* Better text readability - prevent iOS zoom on focus */
+    body {
+        font-size: 16px;
+    }
+
+    #json-input, #json-output {
+        font-size: 16px;
+        line-height: 1.5;
+    }
+
+    /* Hide line numbers on very narrow screens to save space */
+    @media (max-width: 400px) {
+        #line-numbers {
+            display: none;
+        }
+        #json-input {
+            padding-left: 1rem;
+        }
+    }
+
+    /* Improve collapsible arrow touch targets */
+    .collapsible-arrow {
+        padding: 12px;
+        margin: -12px;
+        width: 32px;
+        min-height: 44px;
+    }
+
+    /* Tree control icons */
+    .bg-slate-800\/50 button svg {
+        width: 20px;
+        height: 20px;
+    }
+}
+
+/* Momentum scrolling for better mobile experience */
+#json-output, #json-input {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+
+/* Prevent text selection and tap highlights on UI elements */
+button, .collapsible-arrow {
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+}
