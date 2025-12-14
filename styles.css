@@ -1,0 +1,66 @@
+/* Custom Scrollbar for a cleaner look */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #1e293b;
+}
+::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
+
+/* Syntax Highlighting Colors */
+.json-key { color: #9cdcfe; }      /* Light Blue */
+.json-string { color: #ce9178; }   /* Orange/Red */
+.json-number { color: #b5cea8; }   /* Light Green */
+.json-boolean { color: #569cd6; }  /* Blue */
+.json-null { color: #569cd6; }     /* Blue */
+.json-bracket { color: #d4d4d4; }  /* Light Grey */
+
+/* Tree View specific styles */
+.collapsible-arrow {
+    display: inline-block;
+    cursor: pointer;
+    width: 16px;
+    text-align: center;
+    transition: transform 0.2s ease;
+    user-select: none;
+    color: #d4d4d4;
+    vertical-align: middle;
+}
+.collapsed .collapsible-arrow {
+    transform: rotate(-90deg);
+}
+.child-container {
+    margin-left: 20px;
+    border-left: 1px solid #334155;
+    padding-left: 4px;
+}
+.collapsed .child-container {
+    display: none;
+}
+.collapsed-indicator {
+    display: none;
+    color: #64748b;
+    font-style: italic;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+.collapsed .collapsed-indicator {
+    display: inline;
+}
+
+/* Animation for error message */
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+    20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+.shake-animation {
+    animation: shake 0.4s ease-in-out;
+}
