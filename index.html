@@ -54,6 +54,13 @@
                 <span>Raw Input</span>
                 <span id="input-status" class="text-slate-500 font-normal">0 chars</span>
             </div>
+
+            <!-- Error Toast -->
+            <div id="error-toast" class="bg-red-900/90 border border-red-500 text-red-100 px-4 py-3 rounded shadow-lg hidden flex justify-between items-center">
+                <span id="error-message">Invalid JSON</span>
+                <button onclick="hideError()" class="text-red-300 hover:text-white">✕</button>
+            </div>
+
             <!-- Editor Container with Line Numbers -->
             <div class="flex-1 flex overflow-hidden bg-slate-900">
                 <!-- Line Numbers Gutter -->
@@ -70,11 +77,6 @@
                 ></textarea>
             </div>
 
-            <!-- Error Toast -->
-            <div id="error-toast" class="absolute bottom-4 left-4 right-4 bg-red-900/90 border border-red-500 text-red-100 px-4 py-3 rounded shadow-lg transform translate-y-20 transition-transform duration-300 flex justify-between items-center z-20">
-                <span id="error-message">Invalid JSON</span>
-                <button onclick="hideError()" class="text-red-300 hover:text-white">✕</button>
-            </div>
         </div>
 
         <!-- Middle Action Bar (Mobile Only) -->

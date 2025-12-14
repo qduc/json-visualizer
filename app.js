@@ -528,7 +528,7 @@ function showCopyToast() {
 
 function showError(msg) {
     errorMessage.textContent = msg;
-    errorToast.classList.remove('translate-y-20');
+    errorToast.classList.remove('hidden');
     errorToast.classList.add('shake-animation');
 
     // Remove animation class after it completes
@@ -538,7 +538,7 @@ function showError(msg) {
 }
 
 function hideError() {
-    errorToast.classList.add('translate-y-20');
+    errorToast.classList.add('hidden');
 }
 
 function updateStatus() {
