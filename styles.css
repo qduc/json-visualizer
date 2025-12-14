@@ -14,6 +14,30 @@
     background: #64748b;
 }
 
+/* Line Numbers Styling */
+#line-numbers {
+    min-width: 3ch;
+    padding: 1rem 0.5rem 1rem 1rem;
+    border-right: 1px solid #334155;
+    user-select: none;
+    pointer-events: none;
+}
+
+/* Each line number as a block element */
+.line-num {
+    /* Height matches textarea line-height automatically */
+}
+
+/* Ensure line numbers don't show scrollbar */
+#line-numbers::-webkit-scrollbar {
+    display: none;
+}
+
+#line-numbers {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
 /* Syntax Highlighting Colors */
 .json-key { color: #9cdcfe; }      /* Light Blue */
 .json-string { color: #ce9178; }   /* Orange/Red */

@@ -54,12 +54,21 @@
                 <span>Raw Input</span>
                 <span id="input-status" class="text-slate-500 font-normal">0 chars</span>
             </div>
-            <!-- Defaulting to whitespace-pre-wrap (Wrap On) -->
-            <textarea id="json-input"
-                class="flex-1 bg-slate-900 p-4 resize-none focus:outline-none focus:ring-0 font-mono text-slate-300 leading-relaxed w-full h-full whitespace-pre-wrap"
-                placeholder='Paste your raw JSON here...&#10;Example: {"name": "John", "age": 30}'
-                spellcheck="false"
-            ></textarea>
+            <!-- Editor Container with Line Numbers -->
+            <div class="flex-1 flex overflow-hidden bg-slate-900">
+                <!-- Line Numbers Gutter -->
+                <div id="line-numbers" class="bg-slate-800/50 text-slate-500 text-right select-none shrink-0 overflow-hidden font-mono text-sm leading-relaxed">
+                    <div class="line-num">1</div>
+                </div>
+
+                <!-- Defaulting to whitespace-pre-wrap (Wrap On) -->
+                <textarea id="json-input"
+                    class="flex-1 bg-slate-900 resize-none focus:outline-none focus:ring-0 font-mono text-slate-300 leading-relaxed w-full h-full whitespace-pre-wrap overflow-auto"
+                    style="padding: 1rem 1rem 1rem 0.5rem;"
+                    placeholder='Paste your raw JSON here...&#10;Example: {"name": "John", "age": 30}'
+                    spellcheck="false"
+                ></textarea>
+            </div>
 
             <!-- Error Toast -->
             <div id="error-toast" class="absolute bottom-4 left-4 right-4 bg-red-900/90 border border-red-500 text-red-100 px-4 py-3 rounded shadow-lg transform translate-y-20 transition-transform duration-300 flex justify-between items-center z-20">

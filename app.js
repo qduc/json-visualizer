@@ -7,14 +7,19 @@ const inputStatus = document.getElementById('input-status');
 const wrapToggleBtn = document.getElementById('wrap-toggle');
 const escapeJsonBtn = document.getElementById('escape-json-btn');
 const unescapeJsonBtn = document.getElementById('unescape-json-btn');
+const lineNumbers = document.getElementById('line-numbers');
 
 let debounceTimer;
 let isWrapEnabled = true;
+let resizeDebounceTimer;
+let lineNumberUpdateScheduled = false;
+let mirrorElement = null;
 
 // --- Event Listeners ---
 inputArea.addEventListener('input', () => {
     updateStatus();
     updateEscapeButtons();
+    scheduleLineNumberUpdate();
     hideError();
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
@@ -22,7 +27,131 @@ inputArea.addEventListener('input', () => {
     }, 800);
 });
 
+// Sync scroll between textarea and line numbers
+inputArea.addEventListener('scroll', () => {
+    lineNumbers.scrollTop = inputArea.scrollTop;
+});
+
+// Use ResizeObserver for robust resize handling
+const resizeObserver = new ResizeObserver(() => {
+    scheduleLineNumberUpdate();
+});
+resizeObserver.observe(inputArea);
+
 // --- Core Functions ---
+function scheduleLineNumberUpdate() {
+    if (lineNumberUpdateScheduled) return;
+    lineNumberUpdateScheduled = true;
+    requestAnimationFrame(() => {
+        lineNumberUpdateScheduled = false;
+        updateLineNumbers();
+    });
+}
+
+function updateLineNumbers() {
+    const text = inputArea.value;
+    const lines = text.split('\n');
+    const lineCount = lines.length;
+
+    // Handle empty input
+    if (text === '') {
+        lineNumbers.innerHTML = '<div class="line-num">1</div>';
+        return;
+    }
+
+    if (!isWrapEnabled) {
+        // Simple case: no wrapping, just show line numbers 1 to N as block elements
+        const lineNumbersHTML = lines.map((_, i) =>
+            `<div class="line-num">${i + 1}</div>`
+        ).join('');
+        lineNumbers.innerHTML = lineNumbersHTML;
+        return;
+    }
+
+    // Complex case: wrapping enabled - use mirror element strategy
+    // Create or reuse mirror element
+    if (!mirrorElement) {
+        mirrorElement = document.createElement('div');
+        mirrorElement.id = 'textarea-mirror';
+        mirrorElement.style.position = 'absolute';
+        mirrorElement.style.visibility = 'hidden';
+        mirrorElement.style.pointerEvents = 'none';
+        mirrorElement.style.overflow = 'hidden';
+        mirrorElement.style.height = 'auto';
+        document.body.appendChild(mirrorElement);
+    }
+
+    const computedStyle = window.getComputedStyle(inputArea);
+
+    // Critical: Calculate content width (subtract padding from clientWidth)
+    const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
+    const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
+    const contentWidth = inputArea.clientWidth - paddingLeft - paddingRight;
+
+    // Copy all relevant text layout styles from textarea to mirror
+    mirrorElement.style.width = contentWidth + 'px';
+    mirrorElement.style.font = computedStyle.font;
+    mirrorElement.style.fontSize = computedStyle.fontSize;
+    mirrorElement.style.fontFamily = computedStyle.fontFamily;
+    mirrorElement.style.fontWeight = computedStyle.fontWeight;
+    mirrorElement.style.lineHeight = computedStyle.lineHeight;
+    mirrorElement.style.letterSpacing = computedStyle.letterSpacing;
+    mirrorElement.style.wordSpacing = computedStyle.wordSpacing;
+    mirrorElement.style.whiteSpace = computedStyle.whiteSpace;
+    mirrorElement.style.wordBreak = computedStyle.wordBreak;
+    mirrorElement.style.overflowWrap = computedStyle.overflowWrap;
+    mirrorElement.style.tabSize = computedStyle.tabSize;
+    mirrorElement.style.padding = '0';
+    mirrorElement.style.margin = '0';
+    mirrorElement.style.border = 'none';
+    mirrorElement.style.boxSizing = computedStyle.boxSizing;
+
+    // Get line height (handle 'normal' case)
+    let lineHeight = parseFloat(computedStyle.lineHeight);
+    if (isNaN(lineHeight)) {
+        // Fallback: measure a single line
+        mirrorElement.innerHTML = '<div style="white-space:pre-wrap;">M</div>';
+        lineHeight = mirrorElement.firstChild.offsetHeight;
+    }
+
+    // Build mirror content with one div per logical line (batch DOM creation)
+    const mirrorLines = [];
+    for (let i = 0; i < lineCount; i++) {
+        const lineText = lines[i];
+        // Use zero-width space for empty lines so they have height
+        const content = lineText === '' ? '\u200B' : lineText;
+        mirrorLines.push(`<div class="mirror-line" style="white-space:pre-wrap;overflow-wrap:break-word;word-wrap:break-word;">${escapeHtml(content)}</div>`);
+    }
+    mirrorElement.innerHTML = mirrorLines.join('');
+
+    // Batch read: measure all line heights
+    const mirrorLineElements = mirrorElement.children;
+    const lineNumbersHTML = [];
+
+    for (let i = 0; i < lineCount; i++) {
+        const renderedHeight = mirrorLineElements[i].offsetHeight;
+        const visualLines = Math.max(1, Math.round(renderedHeight / lineHeight));
+
+        // First visual line gets the line number
+        lineNumbersHTML.push(`<div class="line-num">${i + 1}</div>`);
+
+        // Wrapped continuation lines get empty placeholders with same height
+        for (let j = 1; j < visualLines; j++) {
+            lineNumbersHTML.push(`<div class="line-num">&nbsp;</div>`);
+        }
+    }
+
+    // Batch write: update line numbers
+    lineNumbers.innerHTML = lineNumbersHTML.join('');
+}
+
+// Helper to escape HTML in mirror content
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 function toggleWrap() {
     isWrapEnabled = !isWrapEnabled;
 
@@ -37,6 +166,9 @@ function toggleWrap() {
         inputArea.classList.remove('whitespace-pre-wrap');
         inputArea.classList.add('whitespace-pre');
     }
+
+    // Update line numbers to reflect new wrapping
+    scheduleLineNumberUpdate();
 
     // Re-process JSON to update display
     processJSON();
@@ -188,6 +320,7 @@ function formatInput() {
         inputArea.value = JSON.stringify(jsonData, null, 2);
         updateStatus();
         updateEscapeButtons();
+        scheduleLineNumberUpdate();
         processJSON();
     } catch (error) {
         showError('Invalid JSON: ' + error.message);
@@ -203,6 +336,7 @@ function minifyInput() {
         inputArea.value = JSON.stringify(jsonData);
         updateStatus();
         updateEscapeButtons();
+        scheduleLineNumberUpdate();
         processJSON();
     } catch (error) {
         showError('Invalid JSON: ' + error.message);
@@ -220,6 +354,7 @@ function clearAll() {
         </div>`;
     updateStatus();
     updateEscapeButtons();
+    scheduleLineNumberUpdate();
     hideError();
 }
 
@@ -291,6 +426,7 @@ function escapeJsonInput() {
         inputArea.value = JSON.stringify(minified);
         updateStatus();
         updateEscapeButtons();
+        scheduleLineNumberUpdate();
         processJSON();
     } catch (error) {
         showError('Invalid JSON: ' + error.message);
@@ -323,6 +459,7 @@ function unescapeJsonInput() {
         inputArea.value = JSON.stringify(jsonData, null, 2);
         updateStatus();
         updateEscapeButtons();
+        scheduleLineNumberUpdate();
         processJSON();
     } catch (error) {
         showError('Unescape failed: ' + error.message);
@@ -412,3 +549,4 @@ function updateStatus() {
 // Initialize
 updateStatus();
 updateEscapeButtons();
+scheduleLineNumberUpdate();
