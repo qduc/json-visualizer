@@ -3,10 +3,13 @@ const inputArea = document.getElementById('json-input');
 const outputArea = document.getElementById('json-output');
 const errorToast = document.getElementById('error-toast');
 const errorMessage = document.getElementById('error-message');
+const infoToast = document.getElementById('info-toast');
+const infoMessage = document.getElementById('info-message');
 const inputStatus = document.getElementById('input-status');
 const wrapToggleBtn = document.getElementById('wrap-toggle');
 const escapeJsonBtn = document.getElementById('escape-json-btn');
 const unescapeJsonBtn = document.getElementById('unescape-json-btn');
+const unescapeHint = document.getElementById('unescape-hint');
 const maximizeBtn = document.getElementById('maximize-btn');
 const lineNumbers = document.getElementById('line-numbers');
 
@@ -417,6 +420,65 @@ function detectJsonInputForm(raw) {
     return 'unknown';
 }
 
+function getEscapeDepth(raw) {
+    const s = (raw ?? '').trim();
+    if (!s) return 0;
+
+    const tryParse = (text) => {
+        try {
+            return { ok: true, value: JSON.parse(text) };
+        } catch {
+            return { ok: false, value: null };
+        }
+    };
+
+    const tryUnescapeUnquoted = (text) => {
+        try {
+            const quoted = `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+            return { ok: true, value: JSON.parse(quoted) };
+        } catch {
+            return { ok: false, value: null };
+        }
+    };
+
+    const looksLikeJson = (text) => {
+        const t = (text ?? '').trim();
+        if (!t) return false;
+        return t.startsWith('{') || t.startsWith('[') || t === 'null' || t === 'true' || t === 'false' || /^-?\d/.test(t);
+    };
+
+    let depth = 0;
+    let current = s;
+
+    while (true) {
+        let parsed = tryParse(current);
+
+        // If direct parse fails or returns non-string, try unquoted unescape
+        if (!parsed.ok || typeof parsed.value !== 'string') {
+            const unquoted = tryUnescapeUnquoted(current);
+            if (unquoted.ok && typeof unquoted.value === 'string') {
+                const inner = unquoted.value.trim();
+                if (looksLikeJson(inner) && tryParse(inner).ok) {
+                    depth++;
+                    current = inner;
+                    continue;
+                }
+            }
+            break;
+        }
+
+        const inner = parsed.value.trim();
+        if (looksLikeJson(inner) && tryParse(inner).ok) {
+            depth++;
+            current = inner;
+        } else {
+            break;
+        }
+    }
+
+    return depth;
+}
+
 function updateEscapeButtons() {
     if (!escapeJsonBtn || !unescapeJsonBtn) return;
 
@@ -425,12 +487,25 @@ function updateEscapeButtons() {
     if (form === 'escaped') {
         unescapeJsonBtn.classList.remove('hidden');
         escapeJsonBtn.classList.add('hidden');
+
+        const depth = getEscapeDepth(inputArea.value);
+        if (unescapeHint) {
+            if (depth > 1) {
+                unescapeHint.textContent = depth + 'x';
+                unescapeHint.title = 'Content is escaped ' + depth + ' times. Click to unescape one level.';
+                unescapeHint.classList.remove('hidden');
+            } else {
+                unescapeHint.classList.add('hidden');
+            }
+        }
     } else if (form === 'json') {
         escapeJsonBtn.classList.remove('hidden');
         unescapeJsonBtn.classList.add('hidden');
+        if (unescapeHint) unescapeHint.classList.add('hidden');
     } else {
         escapeJsonBtn.classList.add('hidden');
         unescapeJsonBtn.classList.add('hidden');
+        if (unescapeHint) unescapeHint.classList.add('hidden');
     }
 }
 
@@ -455,26 +530,36 @@ function unescapeJsonInput() {
     const raw = inputArea.value.trim();
     if (!raw) return;
 
-    const tryUnescapeToJsonText = () => {
-        try {
-            const v = JSON.parse(raw);
-            if (typeof v === 'string') return v;
-        } catch {
-        }
-
-        const quoted = `"${raw.replace(/\\/g, '\\\\').replace(/\"/g, '\\"')}"`;
-        return JSON.parse(quoted);
-    };
-
     try {
-        const jsonText = tryUnescapeToJsonText();
-        if (typeof jsonText !== 'string') {
-            showError('Unescape failed: expected a string result');
-            return;
+        let parsed;
+
+        // Try parsing directly first (for quoted strings like "\"hello\"")
+        try {
+            const directParsed = JSON.parse(raw);
+            if (typeof directParsed === 'string') {
+                parsed = directParsed;
+            } else {
+                showError('Unescape failed: input is not an escaped string');
+                return;
+            }
+        } catch {
+            // If direct parse fails, try wrapping in quotes (for unquoted escaped content like {\"name\": \"John\"})
+            const quoted = `"${raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+            parsed = JSON.parse(quoted);
         }
 
-        const jsonData = JSON.parse(jsonText);
-        inputArea.value = JSON.stringify(jsonData, null, 2);
+        // Check if the unescaped result is valid JSON that we should pretty-print
+        // But only if it's not still an escaped string (to avoid double-unescaping)
+        const form = detectJsonInputForm(parsed);
+        if (form === 'json') {
+            // Result is valid JSON (object/array), pretty-print it
+            const jsonData = JSON.parse(parsed);
+            inputArea.value = JSON.stringify(jsonData, null, 2);
+        } else {
+            // Result is still escaped or unknown, show as-is
+            inputArea.value = parsed;
+        }
+
         updateStatus();
         updateEscapeButtons();
         scheduleLineNumberUpdate();
@@ -557,6 +642,17 @@ function showError(msg) {
 
 function hideError() {
     errorToast.classList.add('hidden');
+}
+
+let infoToastTimer;
+function showInfo(msg, duration = 3000) {
+    infoMessage.textContent = msg;
+    infoToast.classList.remove('hidden');
+
+    clearTimeout(infoToastTimer);
+    infoToastTimer = setTimeout(() => {
+        infoToast.classList.add('hidden');
+    }, duration);
 }
 
 function updateStatus() {
