@@ -134,14 +134,17 @@ function updateLineNumbers() {
     const lineNumbersHTML = [];
 
     for (let i = 0; i < lineCount; i++) {
-        const renderedHeight = mirrorLineElements[i].offsetHeight;
-        const visualLines = Math.max(1, Math.round(renderedHeight / lineHeight));
+        const mirrorLine = mirrorLineElements[i];
+        const renderedHeight = mirrorLine ? mirrorLine.offsetHeight : lineHeight;
+        const visualLines = Math.max(1, Math.round(renderedHeight / (lineHeight || 1)));
 
         // First visual line gets the line number
         lineNumbersHTML.push(`<div class="line-num">${i + 1}</div>`);
 
         // Wrapped continuation lines get empty placeholders with same height
-        for (let j = 1; j < visualLines; j++) {
+        // Add a safety limit to prevent potential hangs if calculations go wrong
+        const safetyLimit = 500;
+        for (let j = 1; j < Math.min(visualLines, safetyLimit); j++) {
             lineNumbersHTML.push(`<div class="line-num">&nbsp;</div>`);
         }
     }
@@ -407,6 +410,17 @@ function detectJsonInputForm(raw) {
         return 'json';
     }
 
+    // Try unquoted escaped form (e.g. {\"a\":1})
+    try {
+        const simpleQuoted = `"${s}"`;
+        const decoded = JSON.parse(simpleQuoted);
+        if (typeof decoded === 'string') {
+            const inner = decoded.trim();
+            if (looksLikeJson(inner) && tryParse(inner).ok) return 'escaped';
+        }
+    } catch {}
+
+    // Try treating as raw text that needs escaping
     try {
         const quoted = `"${s.replace(/\\/g, '\\\\').replace(/\"/g, '\\"')}"`;
         const decoded = JSON.parse(quoted);
@@ -434,11 +448,19 @@ function getEscapeDepth(raw) {
 
     const tryUnescapeUnquoted = (text) => {
         try {
+            const simpleQuoted = `"${text}"`;
+            const v = JSON.parse(simpleQuoted);
+            if (typeof v === 'string') return { ok: true, value: v };
+        } catch {}
+
+        try {
             const quoted = `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-            return { ok: true, value: JSON.parse(quoted) };
+            const v = JSON.parse(quoted);
+            if (typeof v === 'string') return { ok: true, value: v };
         } catch {
             return { ok: false, value: null };
         }
+        return { ok: false, value: null };
     };
 
     const looksLikeJson = (text) => {
@@ -449,31 +471,30 @@ function getEscapeDepth(raw) {
 
     let depth = 0;
     let current = s;
+    let iterations = 0;
+    const maxIterations = 20;
 
-    while (true) {
+    while (iterations < maxIterations) {
+        iterations++;
         let parsed = tryParse(current);
-
-        // If direct parse fails or returns non-string, try unquoted unescape
-        if (!parsed.ok || typeof parsed.value !== 'string') {
+        if (!parsed.ok) {
             const unquoted = tryUnescapeUnquoted(current);
-            if (unquoted.ok && typeof unquoted.value === 'string') {
-                const inner = unquoted.value.trim();
-                if (looksLikeJson(inner) && tryParse(inner).ok) {
-                    depth++;
-                    current = inner;
-                    continue;
-                }
+            if (unquoted.ok) {
+                parsed = unquoted;
+            } else {
+                break;
             }
-            break;
         }
 
-        const inner = parsed.value.trim();
-        if (looksLikeJson(inner) && tryParse(inner).ok) {
-            depth++;
-            current = inner;
-        } else {
-            break;
+        if (typeof parsed.value === 'string') {
+            const inner = parsed.value.trim();
+            if (inner !== current && tryParse(inner).ok) {
+                current = inner;
+                depth++;
+                continue;
+            }
         }
+        break;
     }
 
     return depth;
@@ -526,27 +547,35 @@ function escapeJsonInput() {
     }
 }
 
+function executeUnescape(raw) {
+    if (!raw) return raw;
+
+    // Try parsing directly first (for quoted strings like "\"hello\"")
+    try {
+        const directParsed = JSON.parse(raw);
+        if (typeof directParsed === 'string') {
+            return directParsed;
+        }
+    } catch {}
+
+    // If direct parse fails, try wrapping in quotes
+    try {
+        // First try simple wrapping (for unquoted escaped content like {\"name\": \"John\"})
+        const simpleQuoted = `"${raw}"`;
+        return JSON.parse(simpleQuoted);
+    } catch {}
+
+    // If that fails, assume raw text that needs escaping (for 'Hello "World"')
+    const quoted = `"${raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+    return JSON.parse(quoted);
+}
+
 function unescapeJsonInput() {
     const raw = inputArea.value.trim();
     if (!raw) return;
 
     try {
-        let parsed;
-
-        // Try parsing directly first (for quoted strings like "\"hello\"")
-        try {
-            const directParsed = JSON.parse(raw);
-            if (typeof directParsed === 'string') {
-                parsed = directParsed;
-            } else {
-                showError('Unescape failed: input is not an escaped string');
-                return;
-            }
-        } catch {
-            // If direct parse fails, try wrapping in quotes (for unquoted escaped content like {\"name\": \"John\"})
-            const quoted = `"${raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-            parsed = JSON.parse(quoted);
-        }
+        const parsed = executeUnescape(raw);
 
         // Check if the unescaped result is valid JSON that we should pretty-print
         // But only if it's not still an escaped string (to avoid double-unescaping)
@@ -664,3 +693,13 @@ function updateStatus() {
 updateStatus();
 updateEscapeButtons();
 scheduleLineNumberUpdate();
+
+// Export for Node.js based testing
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        detectJsonInputForm,
+        getEscapeDepth,
+        executeUnescape
+    };
+}
+
