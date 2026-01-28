@@ -44,6 +44,132 @@ const resizeObserver = new ResizeObserver(() => {
 resizeObserver.observe(inputArea);
 
 // --- Core Functions ---
+
+/**
+ * Attempt to parse user input that may be:
+ * - normal JSON (object/array/primitive)
+ * - escaped JSON stored as a JSON string (1x, 2x, 3x...)
+ * - unquoted escaped JSON (e.g. {\"a\":1})
+ *
+ * Strategy:
+ * 1) Try JSON.parse(text)
+ * 2) If it produces a string that itself can be JSON-parsed, repeat
+ * 3) If JSON.parse fails, try interpreting the entire input as a JSON string literal by wrapping it in quotes
+ *    (this decodes sequences like \" into ") then repeat
+ */
+function smartParseJsonInput(raw, { maxDepth = 25 } = {}) {
+    const normalize = (s) => (s ?? '').replace(/^\uFEFF/, '').trim();
+
+    const tryParse = (text) => {
+        try {
+            return { ok: true, value: JSON.parse(text), error: null };
+        } catch (error) {
+            return { ok: false, value: null, error };
+        }
+    };
+
+    // Used to decode unquoted escaped content like {\"a\":1}
+    // We *do not* escape backslashes or quotes here; we want JSON.parse to interpret existing escape sequences.
+    // We only normalize actual newlines to valid JSON string escapes.
+    const tryDecodeAsJsonStringLiteral = (text) => {
+        try {
+            const normalized = (text ?? '').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+            return { ok: true, value: JSON.parse(`"${normalized}"`), error: null };
+        } catch (error) {
+            return { ok: false, value: null, error };
+        }
+    };
+
+    const stripOuterNonJsonQuotes = (text) => {
+        const t = normalize(text);
+        if (t.length < 2) return t;
+        // Common copy/paste case: payload wrapped in single quotes/backticks from JS/Python logs.
+        const first = t[0];
+        const last = t[t.length - 1];
+        if ((first === '\'' && last === '\'') || (first === '`' && last === '`')) {
+            return t.slice(1, -1).trim();
+        }
+        return t;
+    };
+
+    let current = stripOuterNonJsonQuotes(raw);
+    let depth = 0;
+    let lastError = null;
+    const seen = new Set();
+
+    for (let i = 0; i < maxDepth; i++) {
+        if (seen.has(current)) break;
+        seen.add(current);
+
+        // 1) Direct JSON.parse
+        const direct = tryParse(current);
+        if (direct.ok) {
+            const v = direct.value;
+
+            if (typeof v === 'string') {
+                const inner = normalize(v);
+
+                // If the inner string is itself JSON (including a JSON string literal), keep unwrapping.
+                const innerParsed = tryParse(inner);
+                if (inner && inner !== current && innerParsed.ok) {
+                    current = inner;
+                    depth++;
+                    continue;
+                }
+
+                // If inner isn't directly JSON but looks like an unquoted escaped JSON payload (e.g. {\"a\":1}),
+                // attempt a decode pass on the next iteration.
+                if (inner && inner !== current && /\\["\\\/bfnrtu]/.test(inner)) {
+                    current = inner;
+                    depth++;
+                    continue;
+                }
+            }
+
+            return { value: v, escapeDepth: depth };
+        }
+        lastError = direct.error;
+
+        // 2) Strip outer single quotes/backticks (only if present)
+        const stripped = stripOuterNonJsonQuotes(current);
+        if (stripped !== current) {
+            current = stripped;
+            continue;
+        }
+
+        // 3) Try decoding as a JSON string literal without requiring the user to wrap it in quotes
+        const decoded = tryDecodeAsJsonStringLiteral(current);
+        if (decoded.ok && typeof decoded.value === 'string') {
+            const next = normalize(decoded.value);
+            if (next && next !== current) {
+                current = next;
+                depth++;
+                continue;
+            }
+        }
+        lastError = decoded.error ?? lastError;
+
+        break;
+    }
+
+    const err = lastError || new Error('Invalid JSON');
+    err.smartParse = { maxDepthTried: maxDepth, escapeDepth: depth };
+    throw err;
+}
+
+function analyzeJsonInput(raw, { maxDepth = 25 } = {}) {
+    const s = (raw ?? '').trim();
+    if (!s) return { form: 'unknown', escapeDepth: 0 };
+
+    try {
+        const { value, escapeDepth } = smartParseJsonInput(s, { maxDepth });
+        // If the final value is derived after unwrapping/decoding, treat as escaped.
+        // Note: A JSON string like "hello" (unquoted) will be classified as escaped with depth=1, which is fine.
+        return { form: escapeDepth > 0 ? 'escaped' : 'json', escapeDepth };
+    } catch {
+        return { form: 'unknown', escapeDepth: 0 };
+    }
+}
 function scheduleLineNumberUpdate() {
     if (lineNumberUpdateScheduled) return;
     lineNumberUpdateScheduled = true;
@@ -215,26 +341,7 @@ function processJSON() {
 
         updateEscapeButtons();
 
-        const form = detectJsonInputForm(jsonString);
-        let jsonData;
-        if (form === 'escaped') {
-            let jsonText;
-            try {
-                const v = JSON.parse(jsonString);
-                jsonText = (typeof v === 'string') ? v : null;
-            } catch {
-                jsonText = null;
-            }
-
-            if (jsonText === null) {
-                const quoted = `"${jsonString.replace(/\\/g, '\\\\').replace(/\"/g, '\\"')}"`;
-                jsonText = JSON.parse(quoted);
-            }
-
-            jsonData = JSON.parse(jsonText);
-        } else {
-            jsonData = JSON.parse(jsonString);
-        }
+        const { value: jsonData } = smartParseJsonInput(jsonString);
         outputArea.innerHTML = createTree(jsonData);
 
     } catch (error) {
@@ -340,7 +447,7 @@ function formatInput() {
         const jsonString = inputArea.value.trim();
         if (!jsonString) return;
 
-        const jsonData = JSON.parse(jsonString);
+        const { value: jsonData } = smartParseJsonInput(jsonString);
         inputArea.value = JSON.stringify(jsonData, null, 2);
         updateStatus();
         updateEscapeButtons();
@@ -356,7 +463,7 @@ function minifyInput() {
         const jsonString = inputArea.value.trim();
         if (!jsonString) return;
 
-        const jsonData = JSON.parse(jsonString);
+        const { value: jsonData } = smartParseJsonInput(jsonString);
         inputArea.value = JSON.stringify(jsonData);
         updateStatus();
         updateEscapeButtons();
@@ -383,121 +490,11 @@ function clearAll() {
 }
 
 function detectJsonInputForm(raw) {
-    const s = (raw ?? '').trim();
-    if (!s) return 'unknown';
-
-    const tryParse = (text) => {
-        try {
-            return { ok: true, value: JSON.parse(text) };
-        } catch {
-            return { ok: false, value: null };
-        }
-    };
-
-    const looksLikeJson = (text) => {
-        const t = (text ?? '').trim();
-        if (!t) return false;
-        return t.startsWith('{') || t.startsWith('[') || t === 'null' || t === 'true' || t === 'false' || /^-?\d/.test(t);
-    };
-
-    const asJson = tryParse(s);
-    if (asJson.ok) {
-        if (typeof asJson.value === 'string') {
-            const inner = asJson.value.trim();
-            if (looksLikeJson(inner) && tryParse(inner).ok) return 'escaped';
-            return 'unknown';
-        }
-        return 'json';
-    }
-
-    // Try unquoted escaped form (e.g. {\"a\":1})
-    try {
-        const simpleQuoted = `"${s}"`;
-        const decoded = JSON.parse(simpleQuoted);
-        if (typeof decoded === 'string') {
-            const inner = decoded.trim();
-            if (looksLikeJson(inner) && tryParse(inner).ok) return 'escaped';
-        }
-    } catch {}
-
-    // Try treating as raw text that needs escaping
-    try {
-        const quoted = `"${s.replace(/\\/g, '\\\\').replace(/\"/g, '\\"')}"`;
-        const decoded = JSON.parse(quoted);
-        if (typeof decoded === 'string') {
-            const inner = decoded.trim();
-            if (looksLikeJson(inner) && tryParse(inner).ok) return 'escaped';
-        }
-    } catch {
-    }
-
-    return 'unknown';
+    return analyzeJsonInput(raw).form;
 }
 
 function getEscapeDepth(raw) {
-    const s = (raw ?? '').trim();
-    if (!s) return 0;
-
-    const tryParse = (text) => {
-        try {
-            return { ok: true, value: JSON.parse(text) };
-        } catch {
-            return { ok: false, value: null };
-        }
-    };
-
-    const tryUnescapeUnquoted = (text) => {
-        try {
-            const simpleQuoted = `"${text}"`;
-            const v = JSON.parse(simpleQuoted);
-            if (typeof v === 'string') return { ok: true, value: v };
-        } catch {}
-
-        try {
-            const quoted = `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-            const v = JSON.parse(quoted);
-            if (typeof v === 'string') return { ok: true, value: v };
-        } catch {
-            return { ok: false, value: null };
-        }
-        return { ok: false, value: null };
-    };
-
-    const looksLikeJson = (text) => {
-        const t = (text ?? '').trim();
-        if (!t) return false;
-        return t.startsWith('{') || t.startsWith('[') || t === 'null' || t === 'true' || t === 'false' || /^-?\d/.test(t);
-    };
-
-    let depth = 0;
-    let current = s;
-    let iterations = 0;
-    const maxIterations = 20;
-
-    while (iterations < maxIterations) {
-        iterations++;
-        let parsed = tryParse(current);
-        if (!parsed.ok) {
-            const unquoted = tryUnescapeUnquoted(current);
-            if (unquoted.ok) {
-                parsed = unquoted;
-            } else {
-                break;
-            }
-        }
-
-        if (typeof parsed.value === 'string') {
-            const inner = parsed.value.trim();
-            if (inner !== current && tryParse(inner).ok) {
-                current = inner;
-                depth++;
-                continue;
-            }
-        }
-        break;
-    }
-
-    return depth;
+    return analyzeJsonInput(raw).escapeDepth;
 }
 
 function updateEscapeButtons() {
@@ -535,7 +532,7 @@ function escapeJsonInput() {
         const jsonString = inputArea.value.trim();
         if (!jsonString) return;
 
-        const jsonData = JSON.parse(jsonString);
+        const { value: jsonData } = smartParseJsonInput(jsonString);
         const minified = JSON.stringify(jsonData);
         inputArea.value = JSON.stringify(minified);
         updateStatus();
@@ -617,26 +614,7 @@ function copyOutput() {
         const jsonString = inputArea.value.trim();
         if (!jsonString) return;
 
-        const form = detectJsonInputForm(jsonString);
-        let jsonData;
-        if (form === 'escaped') {
-            let jsonText;
-            try {
-                const v = JSON.parse(jsonString);
-                jsonText = (typeof v === 'string') ? v : null;
-            } catch {
-                jsonText = null;
-            }
-
-            if (jsonText === null) {
-                const quoted = `"${jsonString.replace(/\\/g, '\\\\').replace(/\"/g, '\\"')}"`;
-                jsonText = JSON.parse(quoted);
-            }
-
-            jsonData = JSON.parse(jsonText);
-        } else {
-            jsonData = JSON.parse(jsonString);
-        }
+        const { value: jsonData } = smartParseJsonInput(jsonString);
 
         const formattedJson = JSON.stringify(jsonData, null, 2);
 
@@ -699,7 +677,9 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         detectJsonInputForm,
         getEscapeDepth,
-        executeUnescape
+        executeUnescape,
+        smartParseJsonInput,
+        analyzeJsonInput
     };
 }
 

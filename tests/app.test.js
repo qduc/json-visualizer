@@ -55,7 +55,7 @@ global.ResizeObserver = class {
 global.navigator = { clipboard: {} };
 global.requestAnimationFrame = (cb) => cb();
 
-const { detectJsonInputForm, getEscapeDepth, executeUnescape } = require('../app.js');
+const { detectJsonInputForm, getEscapeDepth, executeUnescape, smartParseJsonInput } = require('../app.js');
 
 describe('JSON Visualizer Core Logic', () => {
 
@@ -70,6 +70,11 @@ describe('JSON Visualizer Core Logic', () => {
         it('should detect escaped JSON', () => {
             assert.strictEqual(detectJsonInputForm('"{\\"a\\":1}"'), 'escaped');
             assert.strictEqual(detectJsonInputForm('{\\"a\\":1}'), 'escaped');
+        });
+
+        it('should detect multi-escaped JSON (3x+)', () => {
+            const threeLayers = JSON.stringify(JSON.stringify(JSON.stringify({"a": 1})));
+            assert.strictEqual(detectJsonInputForm(threeLayers), 'escaped');
         });
 
         it('should return unknown for invalid', () => {
@@ -89,6 +94,39 @@ describe('JSON Visualizer Core Logic', () => {
         it('should return 2 for 2x escaped JSON', () => {
             const threeLayers = JSON.stringify(JSON.stringify(JSON.stringify({"a":1})));
             assert.strictEqual(getEscapeDepth(threeLayers), 2);
+        });
+    });
+
+    describe('smartParseJsonInput', () => {
+        it('should parse normal JSON', () => {
+            const { value, escapeDepth } = smartParseJsonInput('{"a":1}');
+            assert.deepStrictEqual(value, { a: 1 });
+            assert.strictEqual(escapeDepth, 0);
+        });
+
+        it('should parse unquoted escaped JSON (e.g. {\\"a\\":1})', () => {
+            const { value, escapeDepth } = smartParseJsonInput('{\\"a\\":1}');
+            assert.deepStrictEqual(value, { a: 1 });
+            assert.ok(escapeDepth >= 1);
+        });
+
+        it('should parse multi-escaped JSON (3 layers -> object)', () => {
+            const threeLayers = JSON.stringify(JSON.stringify(JSON.stringify({"a": 1})));
+            const { value, escapeDepth } = smartParseJsonInput(threeLayers);
+            assert.deepStrictEqual(value, { a: 1 });
+            assert.ok(escapeDepth >= 2);
+        });
+
+        it('should keep valid JSON strings as strings', () => {
+            const { value, escapeDepth } = smartParseJsonInput('"hello"');
+            assert.strictEqual(value, 'hello');
+            assert.strictEqual(escapeDepth, 0);
+        });
+
+        it('should parse unquoted escaped JSON string (\\"hello\\")', () => {
+            const { value, escapeDepth } = smartParseJsonInput('\\"hello\\"');
+            assert.strictEqual(value, 'hello');
+            assert.ok(escapeDepth >= 1);
         });
     });
 
